@@ -58,11 +58,11 @@ export default async (req, res) => {
         // 3. 复制目标服务器的响应头
         //    我们需要手动删除 content-length 和 transfer-encoding，
         //    因为服务器会根据我们发送的 Buffer 自动计算并添加正确的 Content-Length。
-        // const headers = Object.fromEntries(response.headers.entries())
-        // delete headers['content-length']
-        // delete headers['transfer-encoding']
+        const headers = Object.fromEntries(response.headers.entries())
+        delete headers['content-length']
+        delete headers['transfer-encoding']
 
-        // res.set(headers)
+        res.set(headers)
 
         // 4. 将状态码和内存中的 Buffer 发送给客户端
         res.end(Buffer.from(bodyBuffer))

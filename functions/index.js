@@ -1,36 +1,43 @@
-// functions/proxy.js  (或者 index.js)
+// functions/test-stream.js
 
-import axios from 'axios'
+import { Readable } from 'stream'
 
 export default async (req, res) => {
-    const target = req.query.url
+    // 1. 创建一个 Node.js 的可读流
+    const stream = new Readable({
+        read() {} // 我们将手动推送数据
+    })
 
-    if (!target) {
-        return res.status(404).send({ error: 'Not Found' })
-    }
+    // 2. 设置响应头。注意，我们不设置 Content-Length
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+    res.setHeader('X-Test-Message', 'This is a pure internal stream test')
+    res.writeHead(200)
 
-    try {
-        const response = await axios.get(target, {
-            // 我们需要的是一个流
-            responseType: 'stream',
-            // 设置一个合理的超时，例如20秒
-            timeout: 5000,
-            // 伪装成浏览器，解决目标服务器的连接问题
-            // 最佳实践：让浏览器自己处理解压
-            decompress: false
-        })
+    // 3. 将流“管道”连接到响应对象
+    stream.pipe(res)
 
-        // 将目标服务器的响应头和状态码原样返回
-        // 因为是流，axios 不会设置 Content-Length，服务器会自动使用 chunked 编码
-        res.writeHead(response.status, response.headers)
+    // 4. 模拟数据分块到达，每 200 毫秒推送一块数据
+    let count = 0
+    const interval = setInterval(() => {
+        count++
+        const chunk = `This is chunk number ${count}...\n`
+        console.log(`Pushing chunk: ${count}`)
 
-        // 将从目标服务器收到的数据流，直接“管道”到给用户的响应中
-        response.data.pipe(res)
+        // 推送数据到流中
+        stream.push(chunk)
 
-    } catch (error) {
-        console.error(`Failed to process request for ${target}:`, error.message)
-        // 检查是否能从错误中获取状态码
-        const status = error.response ? error.response.status : 502
-        res.status(status).send({ error: 'Bad Gateway: Failed to fetch the target URL.' })
-    }
+        if (count >= 5) {
+            clearInterval(interval)
+            // 推送 null 来表示流的结束
+            stream.push(null)
+            console.log('Stream finished.')
+        }
+    }, 200)
+
+    // 监听客户端连接断开的事件
+    req.on('close', () => {
+        console.log('Client closed connection.')
+        clearInterval(interval)
+        stream.destroy()
+    })
 }

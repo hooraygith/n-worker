@@ -16,9 +16,6 @@ export default async (req, res) => {
             // 设置一个合理的超时，例如20秒
             timeout: 20000,
             // 伪装成浏览器，解决目标服务器的连接问题
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36'
-            },
             // 最佳实践：让浏览器自己处理解压
             decompress: false
         })

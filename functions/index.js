@@ -66,7 +66,7 @@ export default async (req, res) => {
         })
 
         // **关键: 手动设置 Content-Length**
-        res.setHeader('Content-Length', bodyBuffer.byteLength)
+        // res.setHeader('Content-Length', bodyBuffer.byteLength)
 
         // **关键: 写入头部信息 (此后不能再修改头部)**
         res.writeHead(response.status)

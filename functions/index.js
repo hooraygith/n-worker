@@ -71,10 +71,10 @@ export default async (req, res) => {
         ]
         headersToRemove.forEach(header => delete headers[header])
 
-        res.set(headers)
+        // res.set(headers)
 
         // 5. 将内存中的 Buffer 发送给客户端
-        res.send(Buffer.from(bodyBuffer))
+        res.status(response.status).send(Buffer.from(bodyBuffer));
 
     } catch (error) {
         console.error(`Failed to process request for ${target}:`, error)

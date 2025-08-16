@@ -43,46 +43,38 @@ export default async (req, res) => {
     }
 
     try {
-
-        // 1. 使用 customFetch 获取目标响应对象
         const response = await customFetch(target)
-
-        // 2. 将整个响应体读入内存，存为一个 ArrayBuffer
         const bodyBuffer = await response.arrayBuffer()
 
-        // 3. 先设置状态码
-        res.status(response.status)
+        // --- 开始修改 ---
 
-        // 4. 复制目标服务器的响应头并过滤不兼容的头部
+        // 先设置状态码 (writeHead 会用到)
+        res.statusCode = response.status
+
+        // 复制并过滤头部
         const headers = Object.fromEntries(response.headers.entries())
         const headersToRemove = [
-            'content-length',
-            'Content-Length',
-            'transfer-encoding',
-            'Transfer-Encoding',
-            'connection',
-            'Connection',
-            'keep-alive',
-            'upgrade',
-            'proxy-authenticate',
-            'proxy-authorization',
-            'te',
-            'trailers'
+            'content-length', 'Content-Length', 'transfer-encoding', 'Transfer-Encoding',
+            'connection', 'Connection', 'keep-alive', 'upgrade',
+            'proxy-authenticate', 'proxy-authorization', 'te', 'trailers'
         ]
         headersToRemove.forEach(header => delete headers[header])
 
-        res.set(headers)
+        // 手动设置所有过滤后的头部
+        Object.keys(headers).forEach(headerName => {
+            res.setHeader(headerName, headers[headerName])
+        })
 
-        // 2. 手动设置 Content-Length
-        //    这是 res.end() 不会自动做的事情
+        // **关键: 手动设置 Content-Length**
         res.setHeader('Content-Length', bodyBuffer.byteLength)
 
-        // 3. 写入状态码和头部信息
-        //    writeHead 会将所有已设置的头部信息立即发送给客户端
+        // **关键: 写入头部信息 (此后不能再修改头部)**
         res.writeHead(response.status)
 
-        // 4. 发送数据并结束响应
+        // **关键: 使用 res.end() 发送数据**
         res.end(Buffer.from(bodyBuffer))
+
+        // --- 修改结束 ---
 
     } catch (error) {
         console.error(`Failed to process request for ${target}:`, error)

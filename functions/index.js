@@ -1,7 +1,44 @@
-// functions/proxy.js  (或者 index.js)
+// functions/proxy.js (或者 index.js)
 
-import axios from 'axios'
+import { Readable } from 'stream'
 
+/**
+ * 您原来的 customFetch 函数，无需任何改动。
+ * 它已经支持超时、重试和传递自定义 fetch 选项（比如 headers）。
+ */
+async function customFetch(url, options = {}) {
+    const { retry = 3, timeout = 5000, ...fetchOptions } = options
+
+    for (let i = 0; i < retry + 1; i++) {
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), timeout)
+
+        try {
+            const response = await fetch(url, {
+                ...fetchOptions,
+                signal: controller.signal,
+            })
+            clearTimeout(timeoutId)
+            return response
+        } catch (error) {
+            clearTimeout(timeoutId)
+            if (error.name === 'AbortError') {
+                console.error(`Request to ${url} timed out.`)
+            }
+            if (i < retry) {
+                console.log(`Request to ${url} failed. Retrying... (${i + 1}/${retry})`)
+                await new Promise(res => setTimeout(res, 1000))
+                continue
+            }
+            throw error
+        }
+    }
+    throw new Error(`Failed to fetch ${url} after ${retry} retries.`)
+}
+
+/**
+ * Nhost 函数的主处理程序
+ */
 export default async (req, res) => {
     const target = req.query.url
 
@@ -10,27 +47,18 @@ export default async (req, res) => {
     }
 
     try {
-        const response = await axios.get(target, {
-            // 我们需要的是一个流
-            responseType: 'stream',
-            // 设置一个合理的超时，例如20秒
-            timeout: 20000,
-            // 伪装成浏览器，解决目标服务器的连接问题
-            // 最佳实践：让浏览器自己处理解压
-            decompress: false
-        })
+        // 1. 调用 customFetch，并传入关键的 headers 选项
+        const response = await customFetch(target)
 
-        // 将目标服务器的响应头和状态码原样返回
-        // 因为是流，axios 不会设置 Content-Length，服务器会自动使用 chunked 编码
-        res.writeHead(response.status, response.headers)
+        // 2. 将目标服务器的响应头和状态码原样返回
+        //    这将自动生成 Transfer-Encoding: chunked，绕过平台Bug
+        res.writeHead(response.status, Object.fromEntries(response.headers.entries()))
 
-        // 将从目标服务器收到的数据流，直接“管道”到给用户的响应中
-        response.data.pipe(res)
+        // 3. 将 fetch 返回的 Web Stream 转换为 Node.js Stream 并“管道”到响应中
+        Readable.fromWeb(response.body).pipe(res)
 
     } catch (error) {
         console.error(`Failed to process request for ${target}:`, error.message)
-        // 检查是否能从错误中获取状态码
-        const status = error.response ? error.response.status : 502
-        res.status(status).send({ error: 'Bad Gateway: Failed to fetch the target URL.' })
+        res.status(502).send({ error: 'Bad Gateway: Failed to fetch the target URL after multiple retries.' })
     }
 }

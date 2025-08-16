@@ -39,19 +39,16 @@ export default async (req, res) => {
     const target = req.query.url
 
     if (!target) {
-        return res.status(404).send({ error: 'Not found' })
+        return res.status(404).send('Not found')
     }
 
     try {
-        console.log('--- EXECUTING NON-STREAMING VERSION V2 ---')
 
         // 1. 使用 customFetch 获取目标响应对象
-        const response = await customFetch(target, { timeout: 10000 })
+        const response = await customFetch(target)
 
         // 2. 将整个响应体读入内存，存为一个 ArrayBuffer
         const bodyBuffer = await response.arrayBuffer()
-
-        console.log(`--- V2: Downloaded ${bodyBuffer.byteLength} bytes into buffer. ---`)
 
         // 3. 先设置状态码
         res.status(response.status)
@@ -74,7 +71,7 @@ export default async (req, res) => {
         res.set(headers)
 
         // 5. 将内存中的 Buffer 发送给客户端
-        res.end(Buffer.from(bodyBuffer))
+        res.send(Buffer.from(bodyBuffer))
 
     } catch (error) {
         console.error(`Failed to process request for ${target}:`, error)

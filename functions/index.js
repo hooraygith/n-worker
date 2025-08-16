@@ -65,7 +65,7 @@ export default async (req, res) => {
         // res.set(headers)
 
         // 4. 将状态码和内存中的 Buffer 发送给客户端
-        res.status(response.status).send(Buffer.from(bodyBuffer))
+        res.status(response.status).send(String(bodyBuffer.byteLength))
 
     } catch (error) {
         console.error(`--- V2 ERROR IN NON-STREAMING VERSION: ---`, error)

@@ -1,40 +1,75 @@
-// functions/test-size.js
+// functions/proxy.js
 
+import { Readable } from 'stream'
+
+/**
+ * 带有重试和超时逻辑的 fetch 函数。
+ */
+async function customFetch(url, options = {}) {
+    const { retry = 3, timeout = 5000, ...fetchOptions } = options
+
+    for (let i = 0; i < retry + 1; i++) {
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), timeout)
+
+        try {
+            const response = await fetch(url, {
+                ...fetchOptions,
+                signal: controller.signal,
+            })
+            clearTimeout(timeoutId)
+            return response
+        } catch (error) {
+            clearTimeout(timeoutId)
+            if (error.name === 'AbortError') {
+                console.error(`Request to ${url} timed out.`)
+            }
+            if (i < retry) {
+                console.log(`Request to ${url} failed. Retrying... (${i + 1}/${retry})`)
+                await new Promise(res => setTimeout(res, 1000))
+                continue
+            }
+            throw error
+        }
+    }
+    throw new Error(`Failed to fetch ${url} after ${retry} retries.`)
+}
+
+/**
+ * Nhost 函数的主处理程序 (非流式版本)
+ */
 export default async (req, res) => {
-    // 1. 从查询参数中获取大小（单位：KB）
-    //    我们继续使用 'url' 作为参数名，以匹配您的示例
-    const sizeInKBStr = req.query.url
-    const sizeInKB = parseInt(sizeInKBStr, 10)
+    const target = req.query.url
 
-    // 2. 验证输入是否为有效的正数
-    if (isNaN(sizeInKB) || sizeInKB <= 0) {
-        return res.status(400).send({
-            error: 'Query parameter "url" must be a valid positive number representing the desired size in KB.'
-        })
+    if (!target) {
+        return res.status(404).send({ error: 'Not found' })
     }
 
-    // 3. 计算总大小（单位：字节）
-    //    1 KB = 1024 bytes
-    const sizeInBytes = sizeInKB * 1024
-
     try {
-        // 4. 在内存中创建一个指定大小的 Buffer (数据块)
-        //    我们用字符 'a' 来填充它
-        const dataBuffer = Buffer.alloc(sizeInBytes, 'a')
+        console.log('--- EXECUTING NON-STREAMING VERSION V2 ---')
+        // 1. 使用 customFetch 获取目标响应对象
+        const response = await customFetch(target, { timeout: 10000 })
 
-        // 5. 设置响应头并发送 Buffer
-        //    Content-Type 设为纯文本，方便查看
-        res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+        // 2. 将整个响应体读入内存，存为一个 ArrayBuffer
+        const bodyBuffer = await response.arrayBuffer()
 
-        //    当使用 res.send(buffer) 时，框架会自动计算并添加正确的 Content-Length 头
-        res.status(200).send(dataBuffer)
+        console.log(`--- V2: Downloaded ${bodyBuffer.byteLength} bytes into buffer. ---`)
+
+        // 3. 复制目标服务器的响应头
+        //    我们需要手动删除 content-length 和 transfer-encoding，
+        //    因为服务器会根据我们发送的 Buffer 自动计算并添加正确的 Content-Length。
+        // const headers = Object.fromEntries(response.headers.entries())
+        // delete headers['content-length']
+        // delete headers['transfer-encoding']
+
+        // res.set(headers)
+
+        // 4. 将状态码和内存中的 Buffer 发送给客户端
+        res.status(response.status).send(Buffer.from(bodyBuffer))
 
     } catch (error) {
-        // 如果请求的大小过大，Buffer.alloc 可能会失败
-        console.error(`Failed to allocate buffer of size ${sizeInBytes} bytes:`, error)
-        res.status(500).send({
-            error: `Failed to generate content of size ${sizeInKB} KB. The requested size might be too large for the function's memory.`,
-            requestedBytes: sizeInBytes
-        })
+        console.error(`--- V2 ERROR IN NON-STREAMING VERSION: ---`, error)
+        console.error(`Failed to process request for ${target}:`, error)
+        res.status(502).send({ error: 'Bad Gateway: Failed to fetch the target URL after multiple retries' })
     }
 }

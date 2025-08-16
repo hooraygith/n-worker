@@ -57,8 +57,11 @@ export default async (req, res) => {
         const headers = Object.fromEntries(response.headers.entries())
         const headersToRemove = [
             'content-length',
+            'Content-Length',
             'transfer-encoding',
+            'Transfer-Encoding',
             'connection',
+            'Connection',
             'keep-alive',
             'upgrade',
             'proxy-authenticate',

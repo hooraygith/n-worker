@@ -71,10 +71,18 @@ export default async (req, res) => {
         ]
         headersToRemove.forEach(header => delete headers[header])
 
-        // res.set(headers)
+        res.set(headers)
 
-        // 5. 将内存中的 Buffer 发送给客户端
-        res.status(response.status).send(Buffer.from(bodyBuffer));
+        // 2. 手动设置 Content-Length
+        //    这是 res.end() 不会自动做的事情
+        res.setHeader('Content-Length', bodyBuffer.byteLength)
+
+        // 3. 写入状态码和头部信息
+        //    writeHead 会将所有已设置的头部信息立即发送给客户端
+        res.writeHead(response.status)
+
+        // 4. 发送数据并结束响应
+        res.end(Buffer.from(bodyBuffer))
 
     } catch (error) {
         console.error(`Failed to process request for ${target}:`, error)

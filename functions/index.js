@@ -66,13 +66,7 @@ export default async (req, res) => {
     try {
         // 2. 使用 customFetch 获取目标内容
         // 建议传递一些原始请求头，避免被目标网站屏蔽
-        const response = await customFetch(target, {
-            headers: {
-                'User-Agent': req.headers['user-agent'] || 'Nhost-Function-Proxy/1.0',
-                'Accept': req.headers['accept'] || '*/*',
-                'Accept-Language': req.headers['accept-language'] || 'en-US,en;q=0.9',
-            }
-        })
+        const response = await customFetch(target, {timeout: 10000})
 
         // 3. 将目标服务器的响应头和状态码设置到返回给客户端的响应中
         res.writeHead(response.status, Object.fromEntries(response.headers))

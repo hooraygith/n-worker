@@ -1,83 +1,39 @@
+// functions/proxy.js  (或者 index.js)
 
-/**
- * 带有重试和超时逻辑的 fetch 函数。
- */
-async function customFetch(url, options = {}) {
-    const { retry = 3, timeout = 5000, ...fetchOptions } = options
+import axios from 'axios'
 
-    for (let i = 0; i < retry + 1; i++) {
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), timeout)
-
-        try {
-            const response = await fetch(url, {
-                ...fetchOptions,
-                signal: controller.signal,
-            })
-            clearTimeout(timeoutId)
-            return response
-        } catch (error) {
-            clearTimeout(timeoutId)
-            if (error.name === 'AbortError') {
-                console.error(`Request to ${url} timed out.`)
-            }
-            if (i < retry) {
-                console.log(`Request to ${url} failed. Retrying... (${i + 1}/${retry})`)
-                await new Promise(res => setTimeout(res, 1000))
-                continue
-            }
-            throw error
-        }
-    }
-    throw new Error(`Failed to fetch ${url} after ${retry} retries.`)
-}
-
-/**
- * Nhost 函数的主处理程序 (非流式版本)
- */
 export default async (req, res) => {
     const target = req.query.url
 
     if (!target) {
-        return res.status(404).send('Not found')
+        return res.status(404).send({ error: 'Not Found' })
     }
 
     try {
-        const response = await customFetch(target)
-        const bodyBuffer = await response.arrayBuffer()
-
-        // --- 开始修改 ---
-
-        // 先设置状态码 (writeHead 会用到)
-        res.statusCode = response.status
-
-        // 复制并过滤头部
-        const headers = Object.fromEntries(response.headers.entries())
-        const headersToRemove = [
-            'content-length', 'Content-Length', 'transfer-encoding', 'Transfer-Encoding',
-            'connection', 'Connection', 'keep-alive', 'upgrade',
-            'proxy-authenticate', 'proxy-authorization', 'te', 'trailers'
-        ]
-        headersToRemove.forEach(header => delete headers[header])
-
-        // 手动设置所有过滤后的头部
-        Object.keys(headers).forEach(headerName => {
-            res.setHeader(headerName, headers[headerName])
+        const response = await axios.get(target, {
+            // 我们需要的是一个流
+            responseType: 'stream',
+            // 设置一个合理的超时，例如20秒
+            timeout: 20000,
+            // 伪装成浏览器，解决目标服务器的连接问题
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36'
+            },
+            // 最佳实践：让浏览器自己处理解压
+            decompress: false
         })
 
-        // **关键: 手动设置 Content-Length**
-        // res.setHeader('Content-Length', bodyBuffer.byteLength)
+        // 将目标服务器的响应头和状态码原样返回
+        // 因为是流，axios 不会设置 Content-Length，服务器会自动使用 chunked 编码
+        res.writeHead(response.status, response.headers)
 
-        // **关键: 写入头部信息 (此后不能再修改头部)**
-        res.writeHead(response.status)
-
-        // **关键: 使用 res.end() 发送数据**
-        res.end(Buffer.from(bodyBuffer))
-
-        // --- 修改结束 ---
+        // 将从目标服务器收到的数据流，直接“管道”到给用户的响应中
+        response.data.pipe(res)
 
     } catch (error) {
-        console.error(`Failed to process request for ${target}:`, error)
-        res.status(502).send({ error: 'Bad Gateway: Failed to fetch the target URL after multiple retries' })
+        console.error(`Failed to process request for ${target}:`, error.message)
+        // 检查是否能从错误中获取状态码
+        const status = error.response ? error.response.status : 502
+        res.status(status).send({ error: 'Bad Gateway: Failed to fetch the target URL.' })
     }
 }

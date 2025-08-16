@@ -62,13 +62,14 @@ export default async (req, res) => {
         delete headers['content-length']
         delete headers['transfer-encoding']
 
-        res.set(headers)
+        // res.set(headers)
 
         // 4. 将状态码和内存中的 Buffer 发送给客户端
-        res.status(200).send(bodyBuffer.byteLength)
+        res.status(response.status).send(Buffer.from(bodyBuffer))
 
     } catch (error) {
         console.error(`--- V2 ERROR IN NON-STREAMING VERSION: ---`, error)
+        console.error(`Failed to process request for ${target}:`, error)
         res.status(502).send({ error: 'Bad Gateway: Failed to fetch the target URL after multiple retries' })
     }
 }

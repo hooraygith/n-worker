@@ -1,43 +1,48 @@
-// functions/test-stream.js
+// functions/hybrid-proxy.js
 
+import axios from 'axios'
 import { Readable } from 'stream'
 
 export default async (req, res) => {
-    // 1. 创建一个 Node.js 的可读流
-    const stream = new Readable({
-        read() {} // 我们将手动推送数据
-    })
+    const target = req.query.url
 
-    // 2. 设置响应头。注意，我们不设置 Content-Length
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8')
-    res.setHeader('X-Test-Message', 'This is a pure internal stream test')
-    res.writeHead(200)
+    if (!target) {
+        return res.status(404).send({ error: 'Not Found' })
+    }
 
-    // 3. 将流“管道”连接到响应对象
-    stream.pipe(res)
+    try {
+        // --- 第 1 步: 完整下载外部数据到内存 ---
+        console.log('Step 1: Fetching and buffering the entire file...')
+        const response = await axios.get(target, {
+            // 这里必须使用 arraybuffer 来获取完整内容
+            responseType: 'arraybuffer',
+            timeout: 5000,
+        })
+        const bodyBuffer = response.data // axios 在 responseType: 'arraybuffer' 时，data 就是一个 Buffer
+        console.log(`Step 1 Complete: Downloaded ${bodyBuffer.byteLength} bytes.`)
 
-    // 4. 模拟数据分块到达，每 200 毫秒推送一块数据
-    let count = 0
-    const interval = setInterval(() => {
-        count++
-        const chunk = `This is chunk number ${count}...\n`
-        console.log(`Pushing chunk: ${count}`)
 
-        // 推送数据到流中
-        stream.push(chunk)
+        // --- 第 2 步: 将内存中的 Buffer 流式发送出去 ---
+        console.log('Step 2: Streaming the buffered data to the client...')
 
-        if (count >= 5) {
-            clearInterval(interval)
-            // 推送 null 来表示流的结束
-            stream.push(null)
-            console.log('Stream finished.')
-        }
-    }, 200)
+        // 将原始的、正确的响应头写入
+        res.writeHead(response.status, response.headers)
 
-    // 监听客户端连接断开的事件
-    req.on('close', () => {
-        console.log('Client closed connection.')
-        clearInterval(interval)
-        stream.destroy()
-    })
+        // 创建一个可读流
+        const readable = new Readable()
+        // 将完整的 Buffer 推入流中
+        readable.push(bodyBuffer)
+        // 推送 null 表示流结束
+        readable.push(null)
+
+        // 将这个“人造”的流管道连接到响应中
+        readable.pipe(res)
+
+        console.log('Step 2 Complete: Piping finished.')
+
+    } catch (error) {
+        console.error(`Failed to process request for ${target}:`, error.message)
+        const status = error.response ? error.response.status : 502
+        res.status(status).send({ error: 'Bad Gateway: Failed to fetch the target URL.' })
+    }
 }

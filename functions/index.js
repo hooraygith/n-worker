@@ -1,6 +1,3 @@
-// functions/proxy.js
-
-import { Readable } from 'stream'
 
 /**
  * 带有重试和超时逻辑的 fetch 函数。
@@ -47,6 +44,7 @@ export default async (req, res) => {
 
     try {
         console.log('--- EXECUTING NON-STREAMING VERSION V2 ---')
+
         // 1. 使用 customFetch 获取目标响应对象
         const response = await customFetch(target, { timeout: 10000 })
 
@@ -55,16 +53,27 @@ export default async (req, res) => {
 
         console.log(`--- V2: Downloaded ${bodyBuffer.byteLength} bytes into buffer. ---`)
 
-        // 3. 复制目标服务器的响应头
-        //    我们需要手动删除 content-length 和 transfer-encoding，
-        //    因为服务器会根据我们发送的 Buffer 自动计算并添加正确的 Content-Length。
+        // 3. 先设置状态码
+        res.status(response.status)
+
+        // 4. 复制目标服务器的响应头并过滤不兼容的头部
         const headers = Object.fromEntries(response.headers.entries())
-        delete headers['content-length']
-        delete headers['transfer-encoding']
+        const headersToRemove = [
+            'content-length',
+            'transfer-encoding',
+            'connection',
+            'keep-alive',
+            'upgrade',
+            'proxy-authenticate',
+            'proxy-authorization',
+            'te',
+            'trailers'
+        ]
+        headersToRemove.forEach(header => delete headers[header])
 
         res.set(headers)
 
-        // 4. 将状态码和内存中的 Buffer 发送给客户端
+        // 5. 将内存中的 Buffer 发送给客户端
         res.end(Buffer.from(bodyBuffer))
 
     } catch (error) {

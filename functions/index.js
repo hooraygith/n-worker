@@ -22,10 +22,7 @@ export default async (req, res) => {
         // 流式传输常用的 transfer-encoding 头也应被删除
         delete headers['transfer-encoding']
 
-        res.writeHead(response.status, headers)
-
-        // 使用 res.send() 一次性发送整个缓冲区的数据
-        res.send(response.data)
+        res.status(response.status).set(headers).send(response.data)
 
     } catch (error) {
         console.error(`Failed to process request for ${target}:`, error.message)

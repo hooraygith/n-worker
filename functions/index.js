@@ -22,7 +22,7 @@ export default async (req, res) => {
         // 流式传输常用的 transfer-encoding 头也应被删除
         delete headers['transfer-encoding']
 
-        res.end(response.data)
+        res.end('response.data')
 
     } catch (error) {
         console.error(`Failed to process request for ${target}:`, error.message)
